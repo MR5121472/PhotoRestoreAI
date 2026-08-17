@@ -40,17 +40,18 @@ app.post(
       const base64Image = `data:${req.file.mimetype || "image/jpeg"};base64,${req.file.buffer.toString("base64")}`;
 
       const output = await replicate.run(
-        "sc3000/codeformer:7de2ea26c616d5bf2245ad0d5e24f0ff9a6204578a5c876db731439075736570",
-        {
-          input: {
-            image: base64Image,
-            codeformer_fidelity: 0.7,
-            background_enhance: true,
-            face_upsample: true,
-            upscale: 2
-          }
-        }
-      );
+  "sc3000/codeformer:7de2ea26c616d5bf2245ad0d5e24f0ff9a6204578a5c876db731439075736570",
+  {
+    input: {
+      image: base64Image,
+      codeformer_fidelity: 0.7,
+      background_enhance: true,
+      face_upsample: true,
+      upscale: 2
+    }
+  }
+);
+    
 
       const imageUrl = Array.isArray(output) ? output[0] : output;
 
