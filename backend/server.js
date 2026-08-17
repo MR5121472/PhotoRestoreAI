@@ -2,92 +2,71 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import multer from "multer";
-import OpenAI, { toFile } from "openai";
+import Replicate from "replicate";
 
 const app = express();
 const port = Number(process.env.PORT || 8080);
 
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error("OPENAI_API_KEY is not configured");
+if (!process.env.REPLICATE_API_TOKEN) {
+  throw new Error("REPLICATE_API_TOKEN is not configured");
 }
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN,
 });
 
-app.use(cors({
-  origin: process.env.ALLOWED_ORIGIN || "*",
-  methods: ["GET", "POST"]
-}));
+app.use(cors());
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 10 * 1024 * 1024
-  }
+  limits: { fileSize: 10 * 1024 * 1024 }
 });
 
 app.get("/health", (_req, res) => {
-  res.json({
-    ok: true,
-    service: "photo-restore-ai"
-  });
+  res.json({ ok: true, service: "photo-restore-ai" });
 });
 
 app.post("/api/restore", upload.single("image"), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({
-        error: "image is required"
-      });
+      return res.status(400).json({ error: "image is required" });
     }
 
-    const userPrompt = String(req.body.prompt || "").trim();
+    // Image ko base64 data URI mein convert karna
+    const base64Image = `data:${req.file.mimetype || "image/jpeg"};base64,${req.file.buffer.toString("base64")}`;
 
-    const restorePrompt = userPrompt || `
-Restore this old photograph professionally.
-Remove scratches, dust, stains, fading, blur, compression damage and film noise.
-Recover natural facial details and realistic skin texture.
-Preserve the person's identity, facial structure, expression, pose, clothing, headwear and composition.
-Do not invent a different person.
-Improve sharpness, contrast and tonal range naturally.
-Produce a photorealistic restoration that looks like a clean high-quality photograph, not an illustration or AI painting.
-    `.trim();
-
-    const file = await toFile(
-      req.file.buffer,
-      req.file.originalname || "photo.png",
+    // CodeFormer HD Face Restoration Model
+    const output = await replicate.run(
+      "sc3000/codeformer:7de2ea26c616d5bf2245ad0d5e24f0ff9a6204578a5c876db731439075736570",
       {
-        type: "image/png"
+        input: {
+          image: base64Image,
+          codeformer_fidelity: 0.7,
+          background_enhance: true,
+          face_upsample: true,
+          upscale: 2
+        }
       }
     );
 
-    // OpenAI Images Edit API Request
-    const result = await client.images.edit({
-      model: process.env.IMAGE_MODEL || "dall-e-2",
-      image: file,
-      prompt: restorePrompt,
-      n: 1,
-      size: "1024x1024",
-      response_format: "b64_json"
-    });
+    // Replicate AI se image ka Direct Public Link milta hai
+    const imageUrl = Array.isArray(output) ? output[0] : output;
 
-    const b64 = result?.data?.[0]?.b64_json;
-
-    if (!b64) {
-      return res.status(502).json({
-        error: "No image returned by AI service."
-      });
+    if (!imageUrl) {
+      return res.status(502).json({ error: "No image URL returned by AI model" });
     }
+
+    // Image ko fetch karke direct PNG Bytes client ko wapas bhejna
+    const imageResponse = await fetch(imageUrl);
+    const arrayBuffer = await imageResponse.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
     res.setHeader("Content-Type", "image/png");
     res.setHeader("Cache-Control", "no-store");
-
-    return res.send(Buffer.from(b64, "base64"));
+    return res.send(buffer);
 
   } catch (error) {
     console.error("RESTORE ERROR:", error);
-
     return res.status(500).json({
       error: "Image restoration failed",
       detail: String(error?.message || error)
