@@ -42,45 +42,34 @@ app.post("/api/restore", upload.single("image"), async (req, res) => {
       });
     }
 
-    const userPrompt = String(
-      req.body.prompt || ""
-    ).trim();
+    const userPrompt = String(req.body.prompt || "").trim();
 
     const restorePrompt = userPrompt || `
 Restore this old photograph professionally.
-
-Remove scratches, dust, stains, fading, blur,
-compression damage and film noise.
-
+Remove scratches, dust, stains, fading, blur, compression damage and film noise.
 Recover natural facial details and realistic skin texture.
-
-Preserve the person's identity, facial structure,
-expression, pose, clothing, headwear and composition.
-
+Preserve the person's identity, facial structure, expression, pose, clothing, headwear and composition.
 Do not invent a different person.
-
 Improve sharpness, contrast and tonal range naturally.
-
-Produce a photorealistic restoration that looks like
-a clean high-quality photograph, not an illustration
-or AI painting.
+Produce a photorealistic restoration that looks like a clean high-quality photograph, not an illustration or AI painting.
     `.trim();
 
     const file = await toFile(
       req.file.buffer,
-      req.file.originalname || "photo.jpg",
+      req.file.originalname || "photo.png",
       {
-        type: req.file.mimetype || "image/jpeg"
+        type: "image/png"
       }
     );
 
+    // OpenAI Images Edit API Request
     const result = await client.images.edit({
-      model: process.env.IMAGE_MODEL || "gpt-image-2",
+      model: process.env.IMAGE_MODEL || "dall-e-2",
       image: file,
       prompt: restorePrompt,
+      n: 1,
       size: "1024x1024",
-      quality: "medium",
-      n: 1
+      response_format: "b64_json"
     });
 
     const b64 = result?.data?.[0]?.b64_json;
@@ -94,25 +83,18 @@ or AI painting.
     res.setHeader("Content-Type", "image/png");
     res.setHeader("Cache-Control", "no-store");
 
-    return res.send(
-      Buffer.from(b64, "base64")
-    );
+    return res.send(Buffer.from(b64, "base64"));
 
   } catch (error) {
     console.error("RESTORE ERROR:", error);
 
     return res.status(500).json({
       error: "Image restoration failed",
-      detail:
-        process.env.NODE_ENV === "development"
-          ? String(error?.message || error)
-          : undefined
+      detail: String(error?.message || error)
     });
   }
 });
 
 app.listen(port, () => {
-  console.log(
-    `Photo Restore AI backend listening on port ${port}`
-  );
+  console.log(`Photo Restore AI backend listening on port ${port}`);
 });
